@@ -1,0 +1,25 @@
+{
+    "name": "VRSpaceExplorer.XR",
+    "rootNamespace": "VRSpaceExplorer.XR",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.interaction.toolkit",
+            "expression": "2.0.0",
+            "define": "VSE_XR_AVAILABLE"
+        },
+        {
+            "name": "com.unity.inputsystem",
+            "expression": "1.0.0",
+            "define": "VSE_INPUT_SYSTEM"
+        }
+    ],
+    "noEngineReferences": false
+}
