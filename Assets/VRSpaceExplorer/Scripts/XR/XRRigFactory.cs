@@ -1,21 +1,29 @@
 #if VSE_XR_AVAILABLE && VSE_INPUT_SYSTEM
+// ActionBasedController is a warning-level [Obsolete] in XRI 3.x but still
+// fully supported and keeps the per-hand pose/select wiring compact. The rest
+// of the rig uses current 3.x components (XRRayInteractor, input-system
+// TrackedPoseDriver, XRUIInputModule).
+#pragma warning disable CS0618
 using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.SpatialTracking;
-using UnityEngine.UI;
+using UnityEngine.InputSystem.XR;
+using Unity.XR.CoreUtils;
 using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Inputs;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
+using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 
 namespace VRSpaceExplorer.XR
 {
     /// <summary>
-    /// Builds a complete, comfort-oriented XR Origin rig entirely from code:
-    /// head tracking, two ray-interactor controllers, UI input module support
-    /// and smooth/snap locomotion. Invoked through reflection by the scene
-    /// generator so the Editor code never takes a hard XR package dependency.
+    /// Builds a complete, comfort-oriented XR Origin rig entirely from code,
+    /// targeting XR Interaction Toolkit 3.x: head-tracked camera (Input System
+    /// TrackedPoseDriver), two ray-interactor controllers, UI input module
+    /// support and smooth/snap locomotion. Invoked through reflection by the
+    /// scene generator so the Editor code never takes a hard XR dependency.
     /// </summary>
     public static class XRRigFactory
     {
@@ -29,21 +37,33 @@ namespace VRSpaceExplorer.XR
         {
             var rig = new GameObject("XR Origin Rig");
 
-            var interactionManager = rig.AddComponent<XRInteractionManager>();
+            rig.AddComponent<XRInteractionManager>();
             var xrOrigin = rig.AddComponent<XROrigin>();
             var inputActionManager = rig.AddComponent<InputActionManager>();
+
             var characterController = rig.AddComponent<CharacterController>();
             characterController.center = new Vector3(0f, 1f, 0f);
             characterController.height = 1.8f;
             characterController.radius = 0.25f;
             characterController.skinWidth = 0.02f;
-            rig.AddComponent<CharacterControllerDriver>();
+            // XRI 3.x drives an optional CharacterController through
+            // XRBodyTransformer; a fixed-height controller is sufficient here.
 
             // Camera offset (room-scale pivot).
             var offset = new GameObject("Camera Offset");
             offset.transform.SetParent(rig.transform, false);
 
-            // Head camera.
+            // Shared input actions for head and both hands.
+            InputActionAsset actionAsset = CreateInputActions(
+                out InputAction hmdPosition,
+                out InputAction hmdRotation,
+                out InputAction hmdTrackingState,
+                out InputAction leftMove,
+                out InputAction rightTurn);
+            actionAsset.Enable();
+            inputActionManager.actionAssets.Add(actionAsset);
+
+            // Head camera with Input-System pose driving.
             var cameraObject = new GameObject("Main Camera");
             cameraObject.tag = "MainCamera";
             cameraObject.transform.SetParent(offset.transform, false);
@@ -53,18 +73,18 @@ namespace VRSpaceExplorer.XR
             camera.nearClipPlane = 0.05f;
             camera.farClipPlane = 2000f;
             cameraObject.AddComponent<AudioListener>();
-            var poseDriver = cameraObject.AddComponent<TrackedPoseDriver>();
-            poseDriver.poseSource = TrackedPoseDriver.TrackedPose.Head;
 
-            // Shared input actions for both hands.
-            InputActionAsset actionAsset = CreateInputActions(out InputAction leftMove, out InputAction rightTurn);
-            actionAsset.Enable();
-            inputActionManager.actionAssets.Add(actionAsset);
+            var headPoseDriver = cameraObject.AddComponent<TrackedPoseDriver>();
+            headPoseDriver.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
+            headPoseDriver.updateType = TrackedPoseDriver.UpdateType.UpdateAndBeforeRender;
+            headPoseDriver.positionInput = new InputActionProperty(hmdPosition);
+            headPoseDriver.rotationInput = new InputActionProperty(hmdRotation);
+            headPoseDriver.trackingStateInput = new InputActionProperty(hmdTrackingState);
 
-            BuildController("Left Hand Controller", XRNodeRole.LeftHand, offset.transform, interactionManager, actionAsset, camera.transform);
-            BuildController("Right Hand Controller", XRNodeRole.RightHand, offset.transform, interactionManager, actionAsset, camera.transform);
+            BuildController("Left Hand Controller", XRNodeRole.LeftHand, offset.transform, actionAsset);
+            BuildController("Right Hand Controller", XRNodeRole.RightHand, offset.transform, actionAsset);
 
-            xrOrigin.CameraOffset = offset.transform;
+            xrOrigin.CameraFloorOffsetObject = offset;
             xrOrigin.Camera = camera;
 
             var locomotion = rig.AddComponent<XRComfortLocomotion>();
@@ -101,7 +121,6 @@ namespace VRSpaceExplorer.XR
         /// <summary>Swaps the standalone event module for the XR UI input module.</summary>
         public static void InstallXRUIInputModule()
         {
-            // FindFirstObjectByType is the non-deprecated lookup in Unity 6.
             var eventSystem = UnityEngine.Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>();
             if (eventSystem == null)
             {
@@ -124,14 +143,15 @@ namespace VRSpaceExplorer.XR
             string controllerName,
             XRNodeRole hand,
             Transform parent,
-            XRInteractionManager manager,
-            InputActionAsset actionAsset,
-            Transform headTransform)
+            InputActionAsset actionAsset)
         {
             string prefix = hand == XRNodeRole.LeftHand ? "Left" : "Right";
             var controllerObject = new GameObject(controllerName);
             controllerObject.transform.SetParent(parent, false);
 
+            // Legacy action controller: applies the hand pose and feeds
+            // select/UI-press state to the ray interactor's Automatic
+            // input-compatibility mode.
             var controller = controllerObject.AddComponent<ActionBasedController>();
             controller.positionAction = new InputActionProperty(actionAsset.FindAction($"{prefix}_Position", true));
             controller.rotationAction = new InputActionProperty(actionAsset.FindAction($"{prefix}_Rotation", true));
@@ -139,7 +159,6 @@ namespace VRSpaceExplorer.XR
             controller.selectAction = new InputActionProperty(actionAsset.FindAction($"{prefix}_Trigger", true));
             controller.activateAction = new InputActionProperty(actionAsset.FindAction($"{prefix}_Trigger", true));
             controller.uiPressAction = new InputActionProperty(actionAsset.FindAction($"{prefix}_Trigger", true));
-            controller.gripAction = new InputActionProperty(actionAsset.FindAction($"{prefix}_Grip", true));
 
             // Simple stylised controller visual (no art assets required).
             var visual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -170,7 +189,6 @@ namespace VRSpaceExplorer.XR
 
             var rayInteractor = controllerObject.AddComponent<XRRayInteractor>();
             rayInteractor.attachTransform = attach.transform;
-            rayInteractor.interactionManager = manager;
 
             // RequireComponent(LineRenderer) makes the visual resolve the
             // line automatically; assigning it explicitly would couple us
@@ -178,24 +196,32 @@ namespace VRSpaceExplorer.XR
             controllerObject.AddComponent<XRInteractorLineVisual>();
         }
 
-        private static InputActionAsset CreateInputActions(out InputAction leftMove, out InputAction rightTurn)
+        private static InputActionAsset CreateInputActions(
+            out InputAction hmdPosition,
+            out InputAction hmdRotation,
+            out InputAction hmdTrackingState,
+            out InputAction leftMove,
+            out InputAction rightTurn)
         {
             var asset = ScriptableObject.CreateInstance<InputActionAsset>();
             asset.name = "VR Space Explorer XR Actions";
             InputActionMap map = asset.AddActionMap("XR Controls");
 
+            // Head (HMD) pose actions.
+            hmdPosition = AddVector3(map, "HMD_Position", "<XRHMD>/centerEyePosition");
+            hmdRotation = AddQuaternion(map, "HMD_Rotation", "<XRHMD>/centerEyeRotation");
+            hmdTrackingState = AddInteger(map, "HMD_TrackingState", "<XRHMD>/trackingState");
+
             AddVector3(map, "Left_Position", "<XRController>{LeftHand}/pointerPosition");
             AddQuaternion(map, "Left_Rotation", "<XRController>{LeftHand}/pointerRotation");
             AddInteger(map, "Left_TrackingState", "<XRController>{LeftHand}/trackingState");
             AddButton(map, "Left_Trigger", "<XRController>{LeftHand}/triggerPressed");
-            AddButton(map, "Left_Grip", "<XRController>{LeftHand}/gripPressed");
             leftMove = AddVector2(map, "Left_Thumbstick", "<XRController>{LeftHand}/thumbstick");
 
             AddVector3(map, "Right_Position", "<XRController>{RightHand}/pointerPosition");
             AddQuaternion(map, "Right_Rotation", "<XRController>{RightHand}/pointerRotation");
             AddInteger(map, "Right_TrackingState", "<XRController>{RightHand}/trackingState");
             AddButton(map, "Right_Trigger", "<XRController>{RightHand}/triggerPressed");
-            AddButton(map, "Right_Grip", "<XRController>{RightHand}/gripPressed");
             rightTurn = AddVector2(map, "Right_Thumbstick", "<XRController>{RightHand}/thumbstick");
 
             return asset;
