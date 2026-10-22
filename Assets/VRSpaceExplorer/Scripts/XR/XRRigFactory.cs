@@ -101,7 +101,8 @@ namespace VRSpaceExplorer.XR
         /// <summary>Swaps the standalone event module for the XR UI input module.</summary>
         public static void InstallXRUIInputModule()
         {
-            var eventSystem = UnityEngine.Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>();
+            // FindFirstObjectByType is the non-deprecated lookup in Unity 6.
+            var eventSystem = UnityEngine.Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>();
             if (eventSystem == null)
             {
                 return;

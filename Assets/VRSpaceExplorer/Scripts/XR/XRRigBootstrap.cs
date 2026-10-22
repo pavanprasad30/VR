@@ -108,7 +108,7 @@ namespace VRSpaceExplorer.XR
                 return;
             }
 
-            UnityEngine.Object travel = FindObjectOfType(travelType);
+            UnityEngine.Object travel = FindFirstObjectByType(travelType);
             if (travel is Component travelComponent)
             {
                 travelComponent.SendMessage("SetTraveler", xrRig.transform, SendMessageOptions.DontRequireReceiver);

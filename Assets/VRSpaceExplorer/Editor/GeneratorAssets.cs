@@ -87,10 +87,11 @@ namespace VRSpaceExplorer.EditorTools
                 return savedFallback;
             }
 
-            Font systemFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            // Unity 6 ships LegacyRuntime.ttf; older editors still expose Arial.ttf.
+            Font systemFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (systemFont == null)
             {
-                systemFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                systemFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
             }
 
             if (systemFont == null)
